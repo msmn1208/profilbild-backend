@@ -1,37 +1,82 @@
+import fetch from 'node-fetch';
+
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).send('Method not allowed');
+  // 1. CORS Headers setzen
+  res.setHeader('Access-Control-Allow-Origin', 'https://www.stickeret.com'); // deine Domain hier
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
-  const { customerId, imageUrl } = req.body;
-
-  if (!customerId || !imageUrl) {
-    return res.status(400).json({ error: 'Fehlende Daten' });
+  if (req.method === 'OPTIONS') {
+    // Preflight-Anfrage beantworten
+    return res.status(200).end();
   }
 
-  const shop = 'stickeret.com'; // <--- DEIN SHOP
-  const accessToken = process.env.SHOPIFY_ADMIN_TOKEN; // kommt gleich in Vercel
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Nur POST-Anfragen erlaubt' });
+  }
 
-  const response = await fetch(`https://${shop}/admin/api/2024-01/metafields.json`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Shopify-Access-Token': accessToken,
-    },
-    body: JSON.stringify({
+  try {
+    const { customerId, profileImageUrl } = req.body;
+
+    if (!customerId || !profileImageUrl) {
+      return res.status(400).json({ error: 'customerId und profileImageUrl werden benötigt' });
+    }
+
+    // Shopify Admin API URL
+    const SHOP_DOMAIN = process.env.SHOPIFY_STORE_DOMAIN; // z.B. 'deinshop.myshopify.com'
+    const ADMIN_API_TOKEN = process.env.SHOPIFY_ADMIN_API_ACCESS_TOKEN;
+
+    // GraphQL Mutation zum Setzen des Metafelds (custom.profilbild)
+    const query = `
+      mutation metafieldUpsert($metafield: MetafieldInput!) {
+        metafieldUpsert(metafield: $metafield) {
+          metafield {
+            id
+            namespace
+            key
+            value
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `;
+
+    const variables = {
       metafield: {
         namespace: "custom",
         key: "profilbild",
+        ownerId: customerId, // Shopify Kunden-ID (global ID)
         type: "url",
-        value: imageUrl,
-        owner_resource: "customer",
-        owner_id: customerId
+        value: profileImageUrl
       }
-    })
-  });
+    };
 
-  const result = await response.json();
-  if (!response.ok) {
-    return res.status(response.status).json({ error: result });
+    const response = await fetch(`https://${SHOP_DOMAIN}/admin/api/2023-07/graphql.json`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Shopify-Access-Token': ADMIN_API_TOKEN,
+      },
+      body: JSON.stringify({ query, variables }),
+    });
+
+    const data = await response.json();
+
+    if (data.errors) {
+      return res.status(500).json({ error: data.errors });
+    }
+
+    if (data.data.metafieldUpsert.userErrors.length > 0) {
+      return res.status(400).json({ error: data.data.metafieldUpsert.userErrors });
+    }
+
+    return res.status(200).json({ message: 'Profilbild erfolgreich gespeichert', metafield: data.data.metafieldUpsert.metafield });
+
+  } catch (error) {
+    console.error('Fehler beim Speichern des Profilbilds:', error);
+    res.status(500).json({ error: 'Interner Serverfehler' });
   }
-
-  res.status(200).json({ success: true, result });
 }
