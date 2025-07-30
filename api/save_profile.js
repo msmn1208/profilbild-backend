@@ -1,82 +1,29 @@
-import fetch from 'node-fetch';
-
 export default async function handler(req, res) {
-  // 1. CORS Headers setzen
-  res.setHeader('Access-Control-Allow-Origin', 'https://www.stickeret.com'); // deine Domain hier
+  // 1. CORS erlauben für deinen Shop
+  res.setHeader('Access-Control-Allow-Origin', 'https://www.stickeret.com');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
+  // 2. Preflight-Anfrage (OPTIONS) abfangen
   if (req.method === 'OPTIONS') {
-    // Preflight-Anfrage beantworten
-    return res.status(200).end();
+    return res.status(200).end(); // Nur Header zurückgeben
   }
 
+  // 3. Nur POST erlauben
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Nur POST-Anfragen erlaubt' });
+    return res.status(405).json({ error: 'Nur POST erlaubt' });
   }
 
-  try {
-    const { customerId, profileImageUrl } = req.body;
+  // 4. Dein normaler Code (z. B. Bild-URL auslesen)
+  const { imageUrl, customerId } = req.body;
 
-    if (!customerId || !profileImageUrl) {
-      return res.status(400).json({ error: 'customerId und profileImageUrl werden benötigt' });
-    }
-
-    // Shopify Admin API URL
-    const SHOP_DOMAIN = process.env.SHOPIFY_STORE_DOMAIN; // z.B. 'deinshop.myshopify.com'
-    const ADMIN_API_TOKEN = process.env.SHOPIFY_ADMIN_API_ACCESS_TOKEN;
-
-    // GraphQL Mutation zum Setzen des Metafelds (custom.profilbild)
-    const query = `
-      mutation metafieldUpsert($metafield: MetafieldInput!) {
-        metafieldUpsert(metafield: $metafield) {
-          metafield {
-            id
-            namespace
-            key
-            value
-          }
-          userErrors {
-            field
-            message
-          }
-        }
-      }
-    `;
-
-    const variables = {
-      metafield: {
-        namespace: "custom",
-        key: "profilbild",
-        ownerId: customerId, // Shopify Kunden-ID (global ID)
-        type: "url",
-        value: profileImageUrl
-      }
-    };
-
-    const response = await fetch(`https://${SHOP_DOMAIN}/admin/api/2023-07/graphql.json`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Shopify-Access-Token': ADMIN_API_TOKEN,
-      },
-      body: JSON.stringify({ query, variables }),
-    });
-
-    const data = await response.json();
-
-    if (data.errors) {
-      return res.status(500).json({ error: data.errors });
-    }
-
-    if (data.data.metafieldUpsert.userErrors.length > 0) {
-      return res.status(400).json({ error: data.data.metafieldUpsert.userErrors });
-    }
-
-    return res.status(200).json({ message: 'Profilbild erfolgreich gespeichert', metafield: data.data.metafieldUpsert.metafield });
-
-  } catch (error) {
-    console.error('Fehler beim Speichern des Profilbilds:', error);
-    res.status(500).json({ error: 'Interner Serverfehler' });
+  if (!imageUrl || !customerId) {
+    return res.status(400).json({ error: 'Fehlende Daten' });
   }
+
+  // Hier würdest du z. B. Shopify Metafeld speichern – Dummy als Platzhalter:
+  console.log(`Speichere Bild für ${customerId}: ${imageUrl}`);
+
+  // 5. Erfolg zurückgeben
+  res.status(200).json({ success: true });
 }
